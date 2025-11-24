@@ -42,14 +42,14 @@ public class Extractor {
 
                 // Apply area override from config if present, otherwise use CLI arg
                 String currentArea = area;
+
                 if (fileConfig != null && fileConfig.getOverrides() != null
                         && fileConfig.getOverrides().getArea() != null) {
                     List<Float> a = fileConfig.getOverrides().getArea();
                     if (a.size() == 4) {
-                        // Config area is top, left, bottom, right
                         page = page
                                 .getArea(new Rectangle(a.get(0), a.get(1), a.get(3) - a.get(1), a.get(2) - a.get(0)));
-                        currentArea = null; // Config takes precedence
+                        currentArea = null;
                     }
                 }
 
@@ -88,13 +88,47 @@ public class Extractor {
 
                 for (Table table : tables) {
                     List<List<String>> rows = new ArrayList<>();
+                    boolean startFound = false;
+                    String startMarker = (fileConfig != null && fileConfig.getOverrides() != null)
+                            ? fileConfig.getOverrides().getStartMarker()
+                            : null;
+                    String endMarker = (fileConfig != null && fileConfig.getOverrides() != null)
+                            ? fileConfig.getOverrides().getEndMarker()
+                            : null;
+
                     for (List<technology.tabula.RectangularTextContainer> row : table.getRows()) {
                         List<String> rowData = new ArrayList<>();
+                        StringBuilder rowText = new StringBuilder();
+
                         for (technology.tabula.RectangularTextContainer cell : row) {
-                            rowData.add(cell.getText());
+                            // Replace comma decimal separator with period
+                            String cellText = cell.getText().replace(",", ".");
+                            rowData.add(cellText);
+                            rowText.append(cellText).append(" ");
                         }
-                        rows.add(rowData);
+
+                        String rowString = rowText.toString();
+
+                        // Check for end marker first
+                        if (endMarker != null && rowString.contains(endMarker)) {
+                            break; // Stop processing rows
+                        }
+
+                        // Check for start marker
+                        if (startMarker != null && !startFound) {
+                            if (rowString.contains(startMarker)) {
+                                startFound = true;
+                                rows.add(rowData); // Include the header row
+                            }
+                            continue; // Skip rows before start marker
+                        }
+
+                        // If no markers configured, or start marker found, add the row
+                        if (startMarker == null || startFound) {
+                            rows.add(rowData);
+                        }
                     }
+
                     if (!rows.isEmpty()) {
                         result.add(new TableData(rows, page.getPageNumber()));
                     }

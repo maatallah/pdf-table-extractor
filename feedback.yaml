@@ -6,9 +6,10 @@ global:
 files:
   - filename: "multipage.pdf"
     overrides:
-      # Increased top to 320 to skip address block
-      # Top: 320
-      # Left: 20
-      # Bottom: 700
-      # Right: 580
-      area: [320.0, 20.0, 700.0, 580.0]
+      # Start extraction at "No. Description"
+      startMarker: "No. Description"
+      # End extraction at "Payment Terms"
+      endMarker: "Payment Terms"
+      # Use left/right limits from area, but dynamic top/bottom
+      # Top/Bottom here act as fallbacks or limits if markers not found
+      area: [0.0, 20.0, 800.0, 580.0]

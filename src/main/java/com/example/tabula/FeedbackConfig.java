@@ -115,6 +115,8 @@ public class FeedbackConfig {
     public static class Overrides {
         private List<Float> area;
         private List<Float> columns;
+        private String startMarker;
+        private String endMarker;
 
         public List<Float> getArea() {
             return area;
@@ -130,6 +132,22 @@ public class FeedbackConfig {
 
         public void setColumns(List<Float> columns) {
             this.columns = columns;
+        }
+
+        public String getStartMarker() {
+            return startMarker;
+        }
+
+        public void setStartMarker(String startMarker) {
+            this.startMarker = startMarker;
+        }
+
+        public String getEndMarker() {
+            return endMarker;
+        }
+
+        public void setEndMarker(String endMarker) {
+            this.endMarker = endMarker;
         }
     }
 }
