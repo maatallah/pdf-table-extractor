@@ -1,0 +1,14 @@
+global:
+  guess_columns: true
+  lattice_mode: false
+  stream_mode: true
+
+files:
+  - filename: "multipage.pdf"
+    overrides:
+      # Increased top to 320 to skip address block
+      # Top: 320
+      # Left: 20
+      # Bottom: 700
+      # Right: 580
+      area: [320.0, 20.0, 700.0, 580.0]
