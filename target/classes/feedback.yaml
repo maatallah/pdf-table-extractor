@@ -1,0 +1,22 @@
+# Feedback and Configuration File
+# Use this file to report issues and adjust extraction parameters.
+
+# Global settings
+global:
+  guess_columns: true
+  lattice_mode: false # Set to true for bordered tables
+  stream_mode: false  # Set to true for whitespace-separated tables
+
+# Per-file overrides or issue reports
+files:
+  - filename: "example.pdf"
+    issues:
+      - type: "missing_rows"
+        description: "Rows 5-10 are missing"
+        page: 1
+      - type: "merged_columns"
+        description: "Columns 2 and 3 are merged"
+        page: 1
+    overrides:
+      area: [100.0, 50.0, 500.0, 550.0] # top, left, bottom, right
+      columns: [50.0, 150.0, 300.0, 450.0] # Explicit column positions
