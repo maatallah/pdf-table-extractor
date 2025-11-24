@@ -1,0 +1,14 @@
+global:
+  guess_columns: true
+  lattice_mode: false
+  stream_mode: true
+
+files:
+  - filename: "sample.pdf"
+    overrides:
+      # PDF Page Height is typically 792 (Letter).
+      # Text is at y=650 (from bottom) -> Top = 792 - 650 = 142.
+      # We want to capture headers and first row (y=630 -> Top=162).
+      # Let's set area from 130 to 180.
+      # Top, Left, Bottom, Right
+      area: [130.0, 40.0, 180.0, 400.0] 

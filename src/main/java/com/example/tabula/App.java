@@ -58,16 +58,26 @@ public class App {
         System.out.println("Pages: " + pageRange);
 
         try {
+            FeedbackConfig config = null;
+            if (feedbackPath != null) {
+                File feedbackFile = new File(feedbackPath);
+                if (feedbackFile.exists()) {
+                    com.fasterxml.jackson.databind.ObjectMapper mapper = new com.fasterxml.jackson.dataformat.yaml.YAMLMapper();
+                    config = mapper.readValue(feedbackFile, FeedbackConfig.class);
+                    System.out.println("Loaded feedback configuration from " + feedbackPath);
+                } else {
+                    System.err.println("Warning: Feedback file not found at " + feedbackPath);
+                }
+            }
+
             Extractor extractor = new Extractor();
-            // TODO: Configure extractor with feedback if provided
-            
-            List<TableData> tables = extractor.extractTables(inputPath, pageRange, areaValue);
-            
+            List<TableData> tables = extractor.extractTables(inputPath, pageRange, areaValue, config);
+
             Exporter exporter = new Exporter();
             exporter.export(tables, outputPath, formatValue);
-            
+
             System.out.println("Extraction complete. Output saved to " + outputPath);
-            
+
         } catch (Exception e) {
             e.printStackTrace();
             System.exit(1);
