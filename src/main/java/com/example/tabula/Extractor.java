@@ -92,6 +92,7 @@ public class Extractor {
                 for (Table table : tables) {
                     List<List<String>> rows = new ArrayList<>();
                     boolean startFound = false;
+                    boolean headerRowNext = false;
                     String startMarker = (fileConfig != null && fileConfig.getOverrides() != null)
                             ? fileConfig.getOverrides().getStartMarker()
                             : null;
@@ -122,6 +123,25 @@ public class Extractor {
                             continue;
                         }
 
+                        // Filter out common footer patterns
+                        if (rowString.contains("JAKO AG") ||
+                                rowString.contains("Managing Directors") ||
+                                rowString.contains("Chairman of the Board") ||
+                                rowString.contains("Tax No.") ||
+                                rowString.contains("VAT No.") ||
+                                rowString.contains("IBAN:") ||
+                                rowString.contains("BIC:") ||
+                                rowString.matches(".*Tel\\..*Fax.*") ||
+                                rowString.matches(".*www\\..*\\.com.*")) {
+                            continue;
+                        }
+
+                        // Skip "Unit of" row (first part of two-row header)
+                        if (rowString.trim().equals("Unit of")) {
+                            headerRowNext = true;
+                            continue;
+                        }
+
                         // Check for end marker first
                         if (endMarker != null && rowString.contains(endMarker)) {
                             break; // Stop processing rows
@@ -133,8 +153,21 @@ public class Extractor {
                                 startFound = true;
                                 // Store first header if not already stored
                                 if (firstHeaderRow == null) {
-                                    firstHeaderRow = new ArrayList<>(rowData);
-                                    rows.add(rowData); // Include the header row only once
+                                    // Fix "Measure" to "Unit of Measure" in header
+                                    List<String> modifiedHeader = new ArrayList<>();
+                                    for (String cell : rowData) {
+                                        String trimmed = cell.trim();
+                                        if (trimmed.equals("Measure") || trimmed.equals("Measure Price")) {
+                                            modifiedHeader.add("Unit of Measure");
+                                        } else if (trimmed.contains("Quantity Measure")) {
+                                            modifiedHeader.add(
+                                                    trimmed.replace("Quantity Measure", "Quantity,Unit of Measure"));
+                                        } else {
+                                            modifiedHeader.add(cell);
+                                        }
+                                    }
+                                    firstHeaderRow = new ArrayList<>(modifiedHeader);
+                                    rows.add(modifiedHeader); // Include the modified header row only once
                                 }
                                 // Skip duplicate headers on subsequent pages
                                 else {
