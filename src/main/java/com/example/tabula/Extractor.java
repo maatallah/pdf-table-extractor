@@ -17,10 +17,13 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 
 public class Extractor {
 
+    private List<String> firstHeaderRow = null; // Track first header across pages
+
     public List<TableData> extractTables(String inputPath, String pageRange, String area, FeedbackConfig config)
             throws IOException {
         List<TableData> result = new ArrayList<>();
         File inputFile = new File(inputPath);
+        firstHeaderRow = null; // Reset for each extraction
 
         // Determine file-specific overrides
         FeedbackConfig.FileConfig fileConfig = null;
@@ -107,7 +110,17 @@ public class Extractor {
                             rowText.append(cellText).append(" ");
                         }
 
-                        String rowString = rowText.toString();
+                        String rowString = rowText.toString().trim();
+
+                        // Skip empty rows
+                        if (rowString.isEmpty()) {
+                            continue;
+                        }
+
+                        // Filter out page headers (e.g., "Page 1 of 2")
+                        if (rowString.matches(".*Page\\s+\\d+\\s+of\\s+\\d+.*")) {
+                            continue;
+                        }
 
                         // Check for end marker first
                         if (endMarker != null && rowString.contains(endMarker)) {
@@ -118,12 +131,20 @@ public class Extractor {
                         if (startMarker != null && !startFound) {
                             if (rowString.contains(startMarker)) {
                                 startFound = true;
-                                rows.add(rowData); // Include the header row
+                                // Store first header if not already stored
+                                if (firstHeaderRow == null) {
+                                    firstHeaderRow = new ArrayList<>(rowData);
+                                    rows.add(rowData); // Include the header row only once
+                                }
+                                // Skip duplicate headers on subsequent pages
+                                else {
+                                    continue;
+                                }
                             }
                             continue; // Skip rows before start marker
                         }
 
-                        // If no markers configured, or start marker found, add the row
+                        // If no markers configured, or start marker found
                         if (startMarker == null || startFound) {
                             rows.add(rowData);
                         }
