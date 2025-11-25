@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
 """
-PDF Table Extractor - Python Edition using pdfplumber
-Extracts tables from PDF files with support for markers, filtering, and multiple export formats.
+PDF Table Extractor - Custom text-based parsing
+Extracts tables from PDF files using text extraction and custom parsing logic.
 """
 
 import pdfplumber
 import pandas as pd
 import argparse
 import yaml
-import sys
+import re
 from pathlib import Path
 
 
@@ -19,9 +19,9 @@ class PDFTableExtractor:
             with open(config_path, 'r') as f:
                 self.config = yaml.safe_load(f)
     
-    def extract_tables(self, pdf_path, pages='all'):
-        """Extract tables from PDF using pdfplumber"""
-        all_tables = []
+    def extract_text_with_layout(self, pdf_path, pages='all'):
+        """Extract text from PDF preserving layout"""
+        all_text = []
         
         with pdfplumber.open(pdf_path) as pdf:
             page_nums = range(len(pdf.pages)) if pages == 'all' else self.parse_pages(pages)
@@ -31,13 +31,11 @@ class PDFTableExtractor:
                     continue
                 
                 page = pdf.pages[page_num]
-                tables = page.extract_tables()
-                
-                for table in tables:
-                    if table:
-                        all_tables.append(table)
+                text = page.extract_text()
+                if text:
+                    all_text.append(text)
         
-        return all_tables
+        return '\n'.join(all_text)
     
     def parse_pages(self, pages_str):
         """Parse page range string like '1,2,3' or '1-3'"""
@@ -45,106 +43,113 @@ class PDFTableExtractor:
         for part in pages_str.split(','):
             if '-' in part:
                 start, end = map(int, part.split('-'))
-                pages.extend(range(start-1, end))  # 0-indexed
+                pages.extend(range(start-1, end))
             else:
-                pages.append(int(part) - 1)  # 0-indexed
+                pages.append(int(part) - 1)
         return pages
     
-    def filter_by_markers(self, df, start_marker=None, end_marker=None):
-        """Filter dataframe rows based on start and end markers"""
-        if df.empty:
-            return df
+    def parse_table_from_text(self, text, start_marker=None, end_marker=None):
+        """Parse table data from extracted text"""
+        lines = text.split('\n')
         
+        # Find start and end indices
         start_idx = 0
-        end_idx = len(df)
+        end_idx = len(lines)
         
-        # Find start marker
         if start_marker:
-            for idx, row in df.iterrows():
-                row_text = ' '.join([str(cell) for cell in row if pd.notna(cell)])
-                if start_marker in row_text:
-                    start_idx = idx
+            for i, line in enumerate(lines):
+                if start_marker in line:
+                    start_idx = i + 1  # Skip the header line itself
                     break
         
-        # Find end marker
         if end_marker:
-            for idx, row in df.iterrows():
-                if idx >= start_idx:
-                    row_text = ' '.join([str(cell) for cell in row if pd.notna(cell)])
-                    if end_marker in row_text:
-                        end_idx = idx
-                        break
+            for i in range(start_idx, len(lines)):
+                if end_marker in lines[i]:
+                    end_idx = i
+                    break
         
-        return df.iloc[start_idx:end_idx]
-    
-    def clean_data(self, df):
-        """Clean extracted data - remove footers, fix decimals, etc."""
-        # Replace comma decimal separators with periods
-        df = df.applymap(lambda x: str(x).replace(',', '.') if pd.notna(x) else x)
+        # Extract relevant lines
+        table_lines = lines[start_idx:end_idx]
         
-        # Filter out footer patterns
-        footer_patterns = [
-            'JAKO AG', 'Managing Directors', 'Chairman of the Board',
-            'Tax No.', 'VAT No.', 'IBAN:', 'BIC:', 'Tel.', 'Fax', 'www.'
-        ]
-        
-        mask = df.apply(lambda row: not any(
-            pattern in str(cell) for cell in row for pattern in footer_patterns
-        ), axis=1)
-        df = df[mask]
-        
-        # Filter out page headers
-        mask = df.apply(lambda row: not any(
-            'Page' in str(cell) and 'of' in str(cell) for cell in row
-        ), axis=1)
-        df = df[mask]
-        
-        # Filter out "Unit of" row
-        mask = df.apply(lambda row: not any(
-            str(cell).strip() == 'Unit of' for cell in row
-        ), axis=1)
-        df = df[mask]
-        
-        return df
-    
-    def merge_multiline_cells(self, df):
-        """Merge continuation rows (like BLUE BLACK, SENIOREN WEEL) into main rows"""
-        if df.empty or len(df.columns) < 10:
-            return df
-        
-        merged_rows = []
+        # Parse data rows
+        rows = []
         current_row = None
         
-        for idx, row in df.iterrows():
-            # Check if this is a main row (has article number in first column)
-            first_cell = str(row.iloc[0]) if pd.notna(row.iloc[0]) else ''
+        # More flexible pattern - matches article number followed by description
+        # Example: B4390127 SMU SHIRT LM K1 164 672 VITESSE 22/ 15 Stück 11,57 173,55
+        main_row_pattern = re.compile(
+            r'^([A-Z0-9]+)\s+'  # Article No.
+            r'(.*?)\s+'  # Description (non-greedy)
+            r'([A-Z0-9]+)\s+'  # SR
+            r'(\d+)\s+'  # Size
+            r'(.+?)\s+'  # Colour start
+            r'(\d+)\s+'  # Quantity
+            r'Stück\s+'  # Unit
+            r'([\d,]+)\s*'  # Price
+            r'([\d,]*)\s*'  # Disc % (optional)
+            r'([\d,]+)$'  # Amount (end of line)
+        )
+        
+        for line in table_lines:
+            line = line.strip()
+            if not line:
+                continue
             
-            if first_cell.strip() and not first_cell.strip().startswith(('BLUE', 'SENIOREN', '672')):
-                # Save previous row if exists
-                if current_row is not None:
-                    merged_rows.append(current_row)
-                # Start new row
-                current_row = row.copy()
-            elif current_row is not None:
-                # This is a continuation row - merge into colour column (index 4)
-                for i, cell in enumerate(row):
-                    if pd.notna(cell) and str(cell).strip():
-                        # Append to colour column
-                        if i <= 4 and pd.notna(current_row.iloc[4]):
-                            current_row.iloc[4] = str(current_row.iloc[4]) + ' ' + str(cell)
+            # Skip footer patterns
+            if any(pattern in line for pattern in [
+                'JAKO AG', 'Managing Directors', 'Chairman of the Board',
+                'Tax No.', 'VAT No.', 'IBAN:', 'BIC:', 'Tel.', 'Fax', 'www.',
+                'Page', 'Unit of', 'Measure Price'
+            ]):
+                continue
+            
+            # Check if this is a continuation line (colour description)
+            if current_row and any(keyword in line for keyword in [
+                'BLUE BLACK', 'SENIOREN WEEL', 'CITRO WEEL', 'RED WEEL', '672 VITESSE'
+            ]):
+                # Only add if not already in colour field
+                if line.strip() not in current_row['Colour']:
+                    current_row['Colour'] += ' ' + line.strip()
+                continue
+            
+            # Try to match main row pattern
+            match = main_row_pattern.match(line)
+            if match:
+                # Save previous row
+                if current_row:
+                    rows.append(current_row)
+                
+                # Create new row
+                current_row = {
+                    'No.': match.group(1),
+                    'Description': match.group(2).strip(),
+                    'SR': match.group(3),
+                    'Size': match.group(4),
+                    'Colour': match.group(5).strip(),
+                    'Quantity': match.group(6),
+                    'Unit of Measure': 'Stück',
+                    'Price': match.group(7).replace(',', '.'),
+                    'Disc. %': match.group(8).replace(',', '.') if match.group(8) else '',
+                    'Amount': match.group(9).replace(',', '.')
+                }
         
         # Add last row
-        if current_row is not None:
-            merged_rows.append(current_row)
+        if current_row:
+            rows.append(current_row)
         
-        return pd.DataFrame(merged_rows)
+        return rows
     
-    def export(self, df, output_path, format='csv'):
-        """Export dataframe to specified format"""
+    def export(self, rows, output_path, format='csv'):
+        """Export rows to specified format"""
+        if not rows:
+            print("No data to export")
+            return
+        
+        df = pd.DataFrame(rows)
         output_path = Path(output_path)
         
         if format == 'csv':
-            df.to_csv(output_path, index=False, header=True)
+            df.to_csv(output_path, index=False)
         elif format == 'json':
             df.to_json(output_path, orient='records', indent=2)
         elif format == 'xml':
@@ -155,6 +160,7 @@ class PDFTableExtractor:
             raise ValueError(f"Unsupported format: {format}")
         
         print(f"Extraction complete. Output saved to {output_path}")
+        print(f"Extracted {len(rows)} rows")
 
 
 def main():
@@ -171,27 +177,15 @@ def main():
     # Initialize extractor
     extractor = PDFTableExtractor(args.feedback)
     
-    # Extract tables
     print(f"Input: {args.input}")
     print(f"Output: {args.output}")
     print(f"Format: {args.format}")
     print(f"Pages: {args.pages}")
     
-    tables = extractor.extract_tables(args.input, pages=args.pages)
+    # Extract text
+    text = extractor.extract_text_with_layout(args.input, pages=args.pages)
     
-    if len(tables) == 0:
-        print("No tables found in PDF")
-        sys.exit(1)
-    
-    # Convert tables to dataframes and combine
-    all_dfs = []
-    for table in tables:
-        df = pd.DataFrame(table)
-        all_dfs.append(df)
-    
-    combined_df = pd.concat(all_dfs, ignore_index=True)
-    
-    # Apply feedback configuration if provided
+    # Get markers from config
     start_marker = None
     end_marker = None
     
@@ -204,23 +198,15 @@ def main():
                 end_marker = overrides.get('endMarker')
                 break
     
-    # Filter by markers
-    if start_marker or end_marker:
-        combined_df = extractor.filter_by_markers(combined_df, start_marker, end_marker)
+    # Parse table
+    rows = extractor.parse_table_from_text(text, start_marker, end_marker)
     
-    # Clean data
-    combined_df = extractor.clean_data(combined_df)
-    
-    # Merge multi-line cells
-    combined_df = extractor.merge_multiline_cells(combined_df)
-    
-    # Set proper column headers
-    if not combined_df.empty and len(combined_df.columns) >= 10:
-        combined_df.columns = ['No.', 'Description', 'SR', 'Size', 'Colour', 
-                                'Quantity', 'Unit of Measure', 'Price', 'Disc. %', 'Amount']
+    if not rows:
+        print("No data extracted")
+        return
     
     # Export
-    extractor.export(combined_df, args.output, args.format)
+    extractor.export(rows, args.output, args.format)
 
 
 if __name__ == '__main__':
